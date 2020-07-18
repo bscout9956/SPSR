@@ -317,7 +317,7 @@ class SPSRModel(BaseModel):
             #    self.scaler.step(self.optimizer_G)
             else:
                 l_g_total.backward()
-                self.optimizer_G.step()
+            #    self.optimizer_G.step()
 
                 # D
         for p in self.netD.parameters():
@@ -349,7 +349,7 @@ class SPSRModel(BaseModel):
             #self.scaler.step(self.optimizer_D)
         else:
             l_d_total.backward()
-            self.optimizer_D.step()
+            #self.optimizer_D.step()
 
         for p in self.netD_grad.parameters():
             p.requires_grad = True
@@ -371,7 +371,7 @@ class SPSRModel(BaseModel):
             #self.scaler.step(self.optimizer_D_grad)
         else:
             l_d_total_grad.backward()
-            self.optimizer_D_grad.step()
+            #self.optimizer_D_grad.step()
 
         # set log
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
