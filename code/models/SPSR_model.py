@@ -472,3 +472,11 @@ class SPSRModel(BaseModel):
         self.save_network(self.netG, 'G', iter_step)
         self.save_network(self.netD, 'D', iter_step)
         self.save_network(self.netD_grad, 'D_grad', iter_step)
+
+class nocast():
+    def __init__(self):
+        return None
+    def __enter__(self):
+        return self
+    def __exit__(self, x, y, z):
+        return self
