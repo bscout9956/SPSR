@@ -314,7 +314,7 @@ class SPSRModel(BaseModel):
 
             if self.use_amp:
                 self.scaler.scale(l_g_total).backward()
-                self.scaler.step(self.optimizer_G)
+            #    self.scaler.step(self.optimizer_G)
             else:
                 l_g_total.backward()
                 self.optimizer_G.step()
