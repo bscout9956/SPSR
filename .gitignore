@@ -132,3 +132,6 @@ dmypy.json
 experiments/*
 tb_logger/*
 .idea/*
+
+# Mac Garbage
+.DS_Store
