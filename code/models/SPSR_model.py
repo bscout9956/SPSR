@@ -314,7 +314,7 @@ class SPSRModel(BaseModel):
 
             if self.use_amp:
                 self.scaler.scale(l_g_total).backward()
-                self.scaler.step(self.optimizer_G)
+            #    self.scaler.step(self.optimizer_G)
             else:
                 l_g_total.backward()
                 self.optimizer_G.step()
@@ -346,7 +346,7 @@ class SPSRModel(BaseModel):
 
         if self.use_amp:
             self.scaler.scale(l_d_total).backward()
-            self.scaler.step(self.optimizer_D)
+            #self.scaler.step(self.optimizer_D)
         else:
             l_d_total.backward()
             self.optimizer_D.step()
@@ -368,7 +368,7 @@ class SPSRModel(BaseModel):
 
         if self.use_amp:
             self.scaler.scale(l_d_total_grad).backward()
-            self.scaler.step(self.optimizer_D_grad)
+            #self.scaler.step(self.optimizer_D_grad)
         else:
             l_d_total_grad.backward()
             self.optimizer_D_grad.step()
