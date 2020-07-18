@@ -159,7 +159,7 @@ def main():
                 avg_psnr = avg_psnr / idx
 
                 # log
-                logger.info('# Validation # PSNR: {:.4e}'.format(avg_psnr))
+                logger.info('# Validation # PSNR: {:.2f}'.format(avg_psnr))
                 logger_val = logging.getLogger('val')  # validation logger
                 logger_val.info('<epoch:{:3d}, iter:{:8,d}> psnr: {:.2f}'.format(
                     epoch, current_step, avg_psnr))
