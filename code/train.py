@@ -161,7 +161,7 @@ def main():
                 # log
                 logger.info('# Validation # PSNR: {:.4e}'.format(avg_psnr))
                 logger_val = logging.getLogger('val')  # validation logger
-                logger_val.info('<epoch:{:3d}, iter:{:8,d}> psnr: {:.4e}'.format(
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> psnr: {:.2f}'.format(
                     epoch, current_step, avg_psnr))
                 # tensorboard logger
                 if opt['use_tb_logger'] and 'debug' not in opt['name']:
