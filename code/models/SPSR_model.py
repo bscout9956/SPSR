@@ -9,6 +9,7 @@ from torch.optim import lr_scheduler
 import models.networks as networks
 from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss
+
 logger = logging.getLogger('base')
 
 import torch.nn.functional as F
@@ -16,26 +17,27 @@ import pdb
 
 try:
     from torch.cuda.amp import autocast, GradScaler
+
     load_amp = True
     logger.info('Loaded AMP library')
 except:
     load_amp = False
     logger.info('AMP failed to load | was not loaded.\nMake sure you have PyTorch >=1.6')
 
+
 class Get_gradient(nn.Module):
     def __init__(self):
         super(Get_gradient, self).__init__()
-        kernel_v = [[0, -1, 0], 
-                    [0, 0, 0], 
+        kernel_v = [[0, -1, 0],
+                    [0, 0, 0],
                     [0, 1, 0]]
-        kernel_h = [[0, 0, 0], 
-                    [-1, 0, 1], 
+        kernel_h = [[0, 0, 0],
+                    [-1, 0, 1],
                     [0, 0, 0]]
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
-        self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
-        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()        
-
+        self.weight_h = nn.Parameter(data=kernel_h, requires_grad=False).cuda()
+        self.weight_v = nn.Parameter(data=kernel_v, requires_grad=False).cuda()
 
     def forward(self, x):
         x0 = x[:, 0]
@@ -57,32 +59,33 @@ class Get_gradient(nn.Module):
         x = torch.cat([x0, x1, x2], dim=1)
         return x
 
+
 class Get_gradient_nopadding(nn.Module):
     def __init__(self):
         super(Get_gradient_nopadding, self).__init__()
-        kernel_v = [[0, -1, 0], 
-                    [0, 0, 0], 
+        kernel_v = [[0, -1, 0],
+                    [0, 0, 0],
                     [0, 1, 0]]
-        kernel_h = [[0, 0, 0], 
-                    [-1, 0, 1], 
+        kernel_h = [[0, 0, 0],
+                    [-1, 0, 1],
                     [0, 0, 0]]
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
-        self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
-        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()
+        self.weight_h = nn.Parameter(data=kernel_h, requires_grad=False).cuda()
+        self.weight_v = nn.Parameter(data=kernel_v, requires_grad=False).cuda()
 
     def forward(self, x):
         x0 = x[:, 0]
         x1 = x[:, 1]
         x2 = x[:, 2]
-        x0_v = F.conv2d(x0.unsqueeze(1), self.weight_v, padding = 1)
-        x0_h = F.conv2d(x0.unsqueeze(1), self.weight_h, padding = 1)
+        x0_v = F.conv2d(x0.unsqueeze(1), self.weight_v, padding=1)
+        x0_h = F.conv2d(x0.unsqueeze(1), self.weight_h, padding=1)
 
-        x1_v = F.conv2d(x1.unsqueeze(1), self.weight_v, padding = 1)
-        x1_h = F.conv2d(x1.unsqueeze(1), self.weight_h, padding = 1)
+        x1_v = F.conv2d(x1.unsqueeze(1), self.weight_v, padding=1)
+        x1_h = F.conv2d(x1.unsqueeze(1), self.weight_h, padding=1)
 
-        x2_v = F.conv2d(x2.unsqueeze(1), self.weight_v, padding = 1)
-        x2_h = F.conv2d(x2.unsqueeze(1), self.weight_h, padding = 1)
+        x2_v = F.conv2d(x2.unsqueeze(1), self.weight_v, padding=1)
+        x2_h = F.conv2d(x2.unsqueeze(1), self.weight_h, padding=1)
 
         x0 = torch.sqrt(torch.pow(x0_v, 2) + torch.pow(x0_h, 2) + 1e-6)
         x1 = torch.sqrt(torch.pow(x1_v, 2) + torch.pow(x1_h, 2) + 1e-6)
@@ -106,7 +109,7 @@ class SPSRModel(BaseModel):
         self.netG = networks.define_G(opt).to(self.device)  # G
         if self.is_train:
             self.netD = networks.define_D(opt).to(self.device)  # D
-            self.netD_grad = networks.define_D_grad(opt).to(self.device) # D_grad
+            self.netD_grad = networks.define_D_grad(opt).to(self.device)  # D_grad
             self.netG.train()
             self.netD.train()
             self.netD_grad.train()
@@ -200,20 +203,20 @@ class SPSRModel(BaseModel):
                 else:
                     logger.warning('Params [{:s}] will not optimize.'.format(k))
             self.optimizer_G = torch.optim.Adam(optim_params, lr=train_opt['lr_G'], \
-                weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
+                                                weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
             self.optimizers.append(self.optimizer_G)
 
             # D
             wd_D = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=train_opt['lr_D'], \
-                weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
+                                                weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
 
             self.optimizers.append(self.optimizer_D)
 
             # D_grad
             wd_D_grad = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
             self.optimizer_D_grad = torch.optim.Adam(self.netD_grad.parameters(), lr=train_opt['lr_D'], \
-                weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
+                                                     weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
 
             self.optimizers.append(self.optimizer_D_grad)
 
@@ -221,7 +224,7 @@ class SPSRModel(BaseModel):
             if train_opt['lr_scheme'] == 'MultiStepLR':
                 for optimizer in self.optimizers:
                     self.schedulers.append(lr_scheduler.MultiStepLR(optimizer, \
-                        train_opt['lr_steps'], train_opt['lr_gamma']))
+                                                                    train_opt['lr_steps'], train_opt['lr_gamma']))
             else:
                 raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
 
@@ -238,8 +241,6 @@ class SPSRModel(BaseModel):
             input_ref = data['ref'] if 'ref' in data else data['HR']
             self.var_ref = input_ref.to(self.device)
 
-
-
     def optimize_parameters(self, step):
         # G
         for p in self.netD.parameters():
@@ -253,27 +254,24 @@ class SPSRModel(BaseModel):
         else:
             cast = nocast
 
-        if(self.Branch_pretrain): 
-            if(step < self.Branch_init_iters):
-                for k,v in self.netG.named_parameters():
-                    if 'f_' not in k :
-                        v.requires_grad=False
+        if (self.Branch_pretrain):
+            if (step < self.Branch_init_iters):
+                for k, v in self.netG.named_parameters():
+                    if 'f_' not in k:
+                        v.requires_grad = False
             else:
-                for k,v in self.netG.named_parameters():
-                    if 'f_' not in k :
-                        v.requires_grad=True
-
+                for k, v in self.netG.named_parameters():
+                    if 'f_' not in k:
+                        v.requires_grad = True
 
         self.optimizer_G.zero_grad()
 
         self.fake_H_branch, self.fake_H, self.grad_LR = self.netG(self.var_L)
 
-        
         self.fake_H_grad = self.get_grad(self.fake_H)
         self.var_H_grad = self.get_grad(self.var_H)
         self.var_ref_grad = self.get_grad(self.var_ref)
         self.var_H_grad_nopadding = self.get_grad_nopadding(self.var_H)
-        
 
         l_g_total = 0
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
@@ -286,32 +284,32 @@ class SPSRModel(BaseModel):
                     fake_fea = self.netF(self.fake_H)
                     l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
                     l_g_total += l_g_fea
-                
-                if self.cri_pix_grad: #gradient pixel loss
+
+                if self.cri_pix_grad:  # gradient pixel loss
                     l_g_pix_grad = self.l_pix_grad_w * self.cri_pix_grad(self.fake_H_grad, self.var_H_grad)
                     l_g_total += l_g_pix_grad
 
-
-                if self.cri_pix_branch: #branch pixel loss
-                    l_g_pix_grad_branch = self.l_pix_branch_w * self.cri_pix_branch(self.fake_H_branch, self.var_H_grad_nopadding)
+                if self.cri_pix_branch:  # branch pixel loss
+                    l_g_pix_grad_branch = self.l_pix_branch_w * self.cri_pix_branch(self.fake_H_branch,
+                                                                                    self.var_H_grad_nopadding)
                     l_g_total += l_g_pix_grad_branch
-
 
                 # G gan + cls loss
                 pred_g_fake = self.netD(self.fake_H)
                 pred_d_real = self.netD(self.var_ref).detach()
-                
+
                 l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                                        self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+                                          self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
                 l_g_total += l_g_gan
 
                 # grad G gan + cls loss
-                
+
                 pred_g_fake_grad = self.netD_grad(self.fake_H_grad)
                 pred_d_real_grad = self.netD_grad(self.var_ref_grad).detach()
 
-                l_g_gan_grad = self.l_gan_grad_w * (self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_g_fake_grad), False) + 
-                                                    self.cri_grad_gan(pred_g_fake_grad - torch.mean(pred_d_real_grad), True)) /2
+                l_g_gan_grad = self.l_gan_grad_w * (
+                            self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_g_fake_grad), False) +
+                            self.cri_grad_gan(pred_g_fake_grad - torch.mean(pred_d_real_grad), True)) / 2
                 l_g_total += l_g_gan_grad
 
             if self.use_amp:
@@ -319,10 +317,9 @@ class SPSRModel(BaseModel):
                 self.scaler.step(self.optimizer_G)
             else:
                 l_g_total.backward()
-                self.optimizer_G.step()               
+                self.optimizer_G.step()
 
-
-        # D
+                # D
         for p in self.netD.parameters():
             p.requires_grad = True
 
@@ -344,17 +341,16 @@ class SPSRModel(BaseModel):
                 interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
                 interp.requires_grad = True
                 interp_crit, _ = self.netD(interp)
-                l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit) 
+                l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)
                 l_d_total += l_d_gp
 
         if self.use_amp:
             self.scaler.scale(l_d_total).backward()
             self.scaler.step(self.optimizer_D)
-        else:    
+        else:
             l_d_total.backward()
             self.optimizer_D.step()
-        
-        
+
         for p in self.netD_grad.parameters():
             p.requires_grad = True
 
@@ -364,7 +360,7 @@ class SPSRModel(BaseModel):
         with cast():
             pred_d_real_grad = self.netD_grad(self.var_ref_grad)
             pred_d_fake_grad = self.netD_grad(self.fake_H_grad.detach())  # detach to avoid BP to G
-            
+
             l_d_real_grad = self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_d_fake_grad), True)
             l_d_fake_grad = self.cri_grad_gan(pred_d_fake_grad - torch.mean(pred_d_real_grad), False)
 
@@ -377,8 +373,6 @@ class SPSRModel(BaseModel):
             l_d_total_grad.backward()
             self.optimizer_D_grad.step()
 
-        
-
         # set log
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
             # G
@@ -388,9 +382,9 @@ class SPSRModel(BaseModel):
                 self.log_dict['l_g_fea'] = l_g_fea.item()
             self.log_dict['l_g_gan'] = l_g_gan.item()
 
-            if self.cri_pix_branch: #branch pixel loss
+            if self.cri_pix_branch:  # branch pixel loss
                 self.log_dict['l_g_pix_grad_branch'] = l_g_pix_grad_branch.item()
-                
+
         # D
         self.log_dict['l_d_real'] = l_d_real.item()
         self.log_dict['l_d_fake'] = l_d_fake.item()
@@ -413,7 +407,7 @@ class SPSRModel(BaseModel):
         self.netG.eval()
         with torch.no_grad():
             self.fake_H_branch, self.fake_H, self.grad_LR = self.netG(self.var_L)
-            
+
         self.netG.train()
 
     def get_current_log(self):
@@ -422,7 +416,7 @@ class SPSRModel(BaseModel):
     def get_current_visuals(self, need_HR=True):
         out_dict = OrderedDict()
         out_dict['LR'] = self.var_L.detach()[0].float().cpu()
-        
+
         out_dict['SR'] = self.fake_H.detach()[0].float().cpu()
         out_dict['SR_branch'] = self.fake_H_branch.detach()[0].float().cpu()
         out_dict['LR_grad'] = self.grad_LR.detach()[0].float().cpu()
@@ -446,7 +440,7 @@ class SPSRModel(BaseModel):
             s, n = self.get_network_description(self.netD)
             if isinstance(self.netD, nn.DataParallel):
                 net_struc_str = '{} - {}'.format(self.netD.__class__.__name__,
-                                                self.netD.module.__class__.__name__)
+                                                 self.netD.module.__class__.__name__)
             else:
                 net_struc_str = '{}'.format(self.netD.__class__.__name__)
 
@@ -457,7 +451,7 @@ class SPSRModel(BaseModel):
                 s, n = self.get_network_description(self.netF)
                 if isinstance(self.netF, nn.DataParallel):
                     net_struc_str = '{} - {}'.format(self.netF.__class__.__name__,
-                                                    self.netF.module.__class__.__name__)
+                                                     self.netF.module.__class__.__name__)
                 else:
                     net_struc_str = '{}'.format(self.netF.__class__.__name__)
 
