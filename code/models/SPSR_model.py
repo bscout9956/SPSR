@@ -14,6 +14,14 @@ logger = logging.getLogger('base')
 import torch.nn.functional as F
 import pdb
 
+try:
+    from torch.cuda.amp import autocast, GradScaler
+    load_amp = True
+    logger.info('Loaded AMP library')
+except:
+    load_amp = False
+    logger.info('AMP failed to load | was not loaded.\nMake sure you have PyTorch >=1.6')
+
 class Get_gradient(nn.Module):
     def __init__(self):
         super(Get_gradient, self).__init__()
@@ -26,7 +34,8 @@ class Get_gradient(nn.Module):
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
         self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
-        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()
+        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()        
+
 
     def forward(self, x):
         x0 = x[:, 0]
@@ -87,6 +96,11 @@ class SPSRModel(BaseModel):
     def __init__(self, opt):
         super(SPSRModel, self).__init__(opt)
         train_opt = opt['train']
+
+        self.use_amp = opt['use_amp'] and load_amp
+        if self.use_amp:
+            self.scaler = GradScaler()
+            logger.info('Using Automatic Mixed Precision')
 
         # define networks and load pretrained models
         self.netG = networks.define_G(opt).to(self.device)  # G
@@ -234,6 +248,10 @@ class SPSRModel(BaseModel):
         for p in self.netD_grad.parameters():
             p.requires_grad = False
 
+        if self.use_amp:
+            cast = autocast
+        else:
+            cast = nocast
 
         if(self.Branch_pretrain): 
             if(step < self.Branch_init_iters):
@@ -259,45 +277,49 @@ class SPSRModel(BaseModel):
 
         l_g_total = 0
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
-            if self.cri_pix:  # pixel loss
-                l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
-                l_g_total += l_g_pix
-            if self.cri_fea:  # feature loss
-                real_fea = self.netF(self.var_H).detach()
-                fake_fea = self.netF(self.fake_H)
-                l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
-                l_g_total += l_g_fea
-            
-            if self.cri_pix_grad: #gradient pixel loss
-                l_g_pix_grad = self.l_pix_grad_w * self.cri_pix_grad(self.fake_H_grad, self.var_H_grad)
-                l_g_total += l_g_pix_grad
+            with cast():
+                if self.cri_pix:  # pixel loss
+                    l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
+                    l_g_total += l_g_pix
+                if self.cri_fea:  # feature loss
+                    real_fea = self.netF(self.var_H).detach()
+                    fake_fea = self.netF(self.fake_H)
+                    l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
+                    l_g_total += l_g_fea
+                
+                if self.cri_pix_grad: #gradient pixel loss
+                    l_g_pix_grad = self.l_pix_grad_w * self.cri_pix_grad(self.fake_H_grad, self.var_H_grad)
+                    l_g_total += l_g_pix_grad
 
 
-            if self.cri_pix_branch: #branch pixel loss
-                l_g_pix_grad_branch = self.l_pix_branch_w * self.cri_pix_branch(self.fake_H_branch, self.var_H_grad_nopadding)
-                l_g_total += l_g_pix_grad_branch
+                if self.cri_pix_branch: #branch pixel loss
+                    l_g_pix_grad_branch = self.l_pix_branch_w * self.cri_pix_branch(self.fake_H_branch, self.var_H_grad_nopadding)
+                    l_g_total += l_g_pix_grad_branch
 
 
-            # G gan + cls loss
-            pred_g_fake = self.netD(self.fake_H)
-            pred_d_real = self.netD(self.var_ref).detach()
-            
-            l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                                    self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
-            l_g_total += l_g_gan
+                # G gan + cls loss
+                pred_g_fake = self.netD(self.fake_H)
+                pred_d_real = self.netD(self.var_ref).detach()
+                
+                l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                                        self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+                l_g_total += l_g_gan
 
-            # grad G gan + cls loss
-            
-            pred_g_fake_grad = self.netD_grad(self.fake_H_grad)
-            pred_d_real_grad = self.netD_grad(self.var_ref_grad).detach()
+                # grad G gan + cls loss
+                
+                pred_g_fake_grad = self.netD_grad(self.fake_H_grad)
+                pred_d_real_grad = self.netD_grad(self.var_ref_grad).detach()
 
-            l_g_gan_grad = self.l_gan_grad_w * (self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_g_fake_grad), False) + 
-                                                self.cri_grad_gan(pred_g_fake_grad - torch.mean(pred_d_real_grad), True)) /2
-            l_g_total += l_g_gan_grad
+                l_g_gan_grad = self.l_gan_grad_w * (self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_g_fake_grad), False) + 
+                                                    self.cri_grad_gan(pred_g_fake_grad - torch.mean(pred_d_real_grad), True)) /2
+                l_g_total += l_g_gan_grad
 
-
-            l_g_total.backward()
-            self.optimizer_G.step()
+            if self.use_amp:
+                self.scaler.scale(l_g_total).backward()
+                self.scaler.step(self.optimizer_G)
+            else:
+                l_g_total.backward()
+                self.optimizer_G.step()               
 
 
         # D
@@ -306,28 +328,32 @@ class SPSRModel(BaseModel):
 
         self.optimizer_D.zero_grad()
         l_d_total = 0
-        pred_d_real = self.netD(self.var_ref)
-        pred_d_fake = self.netD(self.fake_H.detach())  # detach to avoid BP to G
-        l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-        l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+        with cast():
+            pred_d_real = self.netD(self.var_ref)
+            pred_d_fake = self.netD(self.fake_H.detach())  # detach to avoid BP to G
+            l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+            l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
 
-        l_d_total = (l_d_real + l_d_fake) / 2
+            l_d_total = (l_d_real + l_d_fake) / 2
 
-        if self.opt['train']['gan_type'] == 'wgan-gp':
-            batch_size = self.var_ref.size(0)
-            if self.random_pt.size(0) != batch_size:
-                self.random_pt.resize_(batch_size, 1, 1, 1)
-            self.random_pt.uniform_()  # Draw random interpolation points
-            interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
-            interp.requires_grad = True
-            interp_crit, _ = self.netD(interp)
-            l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit) 
-            l_d_total += l_d_gp
+            if self.opt['train']['gan_type'] == 'wgan-gp':
+                batch_size = self.var_ref.size(0)
+                if self.random_pt.size(0) != batch_size:
+                    self.random_pt.resize_(batch_size, 1, 1, 1)
+                self.random_pt.uniform_()  # Draw random interpolation points
+                interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
+                interp.requires_grad = True
+                interp_crit, _ = self.netD(interp)
+                l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit) 
+                l_d_total += l_d_gp
 
-        l_d_total.backward()
-
-        self.optimizer_D.step()
-
+        if self.use_amp:
+            self.scaler.scale(l_d_total).backward()
+            self.scaler.step(self.optimizer_D)
+        else:    
+            l_d_total.backward()
+            self.optimizer_D.step()
+        
         
         for p in self.netD_grad.parameters():
             p.requires_grad = True
@@ -335,19 +361,21 @@ class SPSRModel(BaseModel):
         self.optimizer_D_grad.zero_grad()
         l_d_total_grad = 0
 
-        
-        pred_d_real_grad = self.netD_grad(self.var_ref_grad)
-        pred_d_fake_grad = self.netD_grad(self.fake_H_grad.detach())  # detach to avoid BP to G
-        
-        l_d_real_grad = self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_d_fake_grad), True)
-        l_d_fake_grad = self.cri_grad_gan(pred_d_fake_grad - torch.mean(pred_d_real_grad), False)
+        with cast():
+            pred_d_real_grad = self.netD_grad(self.var_ref_grad)
+            pred_d_fake_grad = self.netD_grad(self.fake_H_grad.detach())  # detach to avoid BP to G
+            
+            l_d_real_grad = self.cri_grad_gan(pred_d_real_grad - torch.mean(pred_d_fake_grad), True)
+            l_d_fake_grad = self.cri_grad_gan(pred_d_fake_grad - torch.mean(pred_d_real_grad), False)
 
-        l_d_total_grad = (l_d_real_grad + l_d_fake_grad) / 2
+            l_d_total_grad = (l_d_real_grad + l_d_fake_grad) / 2
 
-
-        l_d_total_grad.backward()
-
-        self.optimizer_D_grad.step()
+        if self.use_amp:
+            self.scaler.scale(l_d_total_grad).backward()
+            self.scaler.step(self.optimizer_D_grad)
+        else:
+            l_d_total_grad.backward()
+            self.optimizer_D_grad.step()
 
         
 
