@@ -2,7 +2,8 @@ name: 'SPSR'
 use_tb_logger: true
 model: 'spsr'
 scale: 4
-gpu_ids: [0,1]
+gpu_ids: [0]
+use_amp: true
 
 datasets:
   train:
