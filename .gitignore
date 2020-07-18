@@ -131,3 +131,4 @@ dmypy.json
 # SPSR stuff
 experiments/*
 tb_logger/*
+.idea/*
